@@ -1,10 +1,10 @@
 import { build } from 'esbuild';
-import { mkdir, copyFile, readFile, writeFile, rm, readdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const DIST = 'dist';
 await rm(DIST, { recursive: true, force: true });
-await mkdir(join(DIST, 'screens'), { recursive: true });
+await mkdir(DIST, { recursive: true });
 
 const jsxFiles = [
   'tweaks-panel.jsx',
@@ -21,22 +21,38 @@ const jsxFiles = [
   'screens/clients.jsx',
 ];
 
-await build({
-  entryPoints: jsxFiles,
-  outdir: DIST,
-  outbase: '.',
-  outExtension: { '.js': '.js' },
+const appSrc = await readFile('index.html', 'utf8');
+const inlineMatch = appSrc.match(/<script type="text\/babel" data-presets="env,react">([\s\S]*?)<\/script>/);
+if (!inlineMatch) throw new Error('Could not find inline App script in index.html');
+await writeFile('app.jsx', inlineMatch[1]);
+
+const allEntries = [...jsxFiles, 'app.jsx'];
+
+const result = await build({
+  stdin: {
+    contents: allEntries.map(f => `import ${JSON.stringify('./' + f)};`).join('\n'),
+    resolveDir: '.',
+    loader: 'js',
+  },
+  bundle: true,
+  write: false,
   loader: { '.jsx': 'jsx' },
   jsx: 'transform',
   jsxFactory: 'React.createElement',
   jsxFragment: 'React.Fragment',
-  bundle: false,
+  format: 'iife',
   minify: true,
   target: ['es2020'],
-  logLevel: 'info',
+  external: ['react', 'react-dom'],
 });
 
-await copyFile('styles.css', join(DIST, 'styles.css'));
+await rm('app.jsx');
+
+const bundledJs = result.outputFiles[0].text;
+const css = await readFile('styles.css', 'utf8');
+
+const reactUmd = await (await fetch('https://unpkg.com/react@18.3.1/umd/react.production.min.js')).text();
+const reactDomUmd = await (await fetch('https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js')).text();
 
 const html = `<!doctype html>
 <html lang="en">
@@ -44,47 +60,18 @@ const html = `<!doctype html>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Cadence — Performance OS</title>
-<link rel="stylesheet" href="styles.css"/>
+<style>
+${css}
+</style>
 </head>
 <body>
 <div id="root"></div>
-
-<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-
-<script src="tweaks-panel.js"></script>
-<script src="data.js"></script>
-<script src="icons.js"></script>
-<script src="charts.js"></script>
-<script src="shell.js"></script>
-<script src="cmdk.js"></script>
-<script src="screens/dashboard.js"></script>
-<script src="screens/preflight.js"></script>
-<script src="screens/registry.js"></script>
-<script src="screens/entry.js"></script>
-<script src="screens/reports.js"></script>
-<script src="screens/clients.js"></script>
-<script src="app.js"></script>
+<script>${reactUmd}</script>
+<script>${reactDomUmd}</script>
+<script>${bundledJs}</script>
 </body>
 </html>
 `;
+
 await writeFile(join(DIST, 'index.html'), html);
-
-const appSrc = await readFile('index.html', 'utf8');
-const inlineMatch = appSrc.match(/<script type="text\/babel" data-presets="env,react">([\s\S]*?)<\/script>/);
-if (!inlineMatch) throw new Error('Could not find inline App script in index.html');
-await writeFile('app.jsx', inlineMatch[1]);
-await build({
-  entryPoints: ['app.jsx'],
-  outfile: join(DIST, 'app.js'),
-  loader: { '.jsx': 'jsx' },
-  jsx: 'transform',
-  jsxFactory: 'React.createElement',
-  jsxFragment: 'React.Fragment',
-  bundle: false,
-  minify: true,
-  target: ['es2020'],
-});
-await rm('app.jsx');
-
-console.log('Build complete →', DIST);
+console.log('Build complete →', join(DIST, 'index.html'), `(${(html.length / 1024).toFixed(1)} KB)`);

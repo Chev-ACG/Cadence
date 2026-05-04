@@ -1,55 +1,54 @@
 # Deploying Cadence
 
-Cadence is a static site (HTML/CSS/JS, ~164KB). It runs on any web server.
+Cadence builds to **a single self-contained `dist/index.html` file** (~122 KB).
+HTML, CSS, React, and all app JS are inlined. No external assets except the
+Geist webfont (loaded from Google Fonts at runtime).
 
 ## Build
 
 ```sh
 npm install
-node build.mjs
+npm run build
 ```
 
-Output goes to `dist/`. That's everything you need to serve.
+Output: `dist/index.html`. That one file is the entire app.
 
-## Option 1 — Docker (recommended)
+## Deploy
+
+Pick whichever fits your server:
+
+### Drop it onto any web server
+
+```sh
+scp dist/index.html user@your-server:/var/www/html/index.html
+```
+
+Works with nginx, Apache, Caddy, Lighttpd — anything that serves static files.
+No config required beyond the default document root.
+
+### Docker (nginx)
 
 ```sh
 docker build -t cadence .
-docker run -d -p 80:80 --name cadence cadence
+docker run -d -p 80:80 --restart unless-stopped --name cadence cadence
 ```
 
-The image runs nginx with gzip and SPA-style fallback already configured.
+### Object storage / CDN
 
-## Option 2 — Upload to an existing nginx/Apache server
+Upload `dist/index.html` to S3, GCS, R2, Azure Blob, or any static host. Set it
+as the index document. Done.
+
+### Local preview
 
 ```sh
-# on your machine
-node build.mjs
-
-# upload to the server
-rsync -avz --delete dist/ user@your-server:/var/www/cadence/
+npm run serve   # http://localhost:8080
 ```
 
-Minimal nginx server block (see `nginx.conf` for the full version):
-
-```nginx
-server {
-  listen 80;
-  server_name cadence.example.com;
-  root /var/www/cadence;
-  index index.html;
-  location / { try_files $uri $uri/ /index.html; }
-}
-```
-
-Reload: `sudo nginx -t && sudo systemctl reload nginx`.
-
-## Option 3 — Any object store with static hosting
-
-The `dist/` folder also drops cleanly into S3 + CloudFront, GCS, R2, Azure Blob,
-or any CDN that serves static files. Set `index.html` as the index document.
+Or just open `dist/index.html` directly in a browser — it works from `file://`
+too (the only network requests are React UMD already inlined and the Google
+Fonts stylesheet).
 
 ## TLS
 
-Use Caddy, Traefik, or `certbot --nginx` for Let's Encrypt certificates. The
-app makes no assumptions about origin.
+Front it with Caddy, Traefik, Cloudflare, or `certbot --nginx` — no app-level
+configuration.
