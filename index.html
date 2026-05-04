@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Cadence — Performance OS</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="charts.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="cmdk.jsx"></script>
+<script type="text/babel" src="screens/dashboard.jsx"></script>
+<script type="text/babel" src="screens/preflight.jsx"></script>
+<script type="text/babel" src="screens/registry.jsx"></script>
+<script type="text/babel" src="screens/entry.jsx"></script>
+<script type="text/babel" src="screens/reports.jsx"></script>
+<script type="text/babel" src="screens/clients.jsx"></script>
+
+<script type="text/babel" data-presets="env,react">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent1": "#7c3aed",
+  "accent2": "#dc2626",
+  "density": "comfortable",
+  "dark": false
+}/*EDITMODE-END*/;
+
+const CRUMBS = {
+  dashboard: ['Workspace', 'Dashboard'],
+  clients: ['Workspace', 'Clients'],
+  client_detail: ['Workspace', 'Clients'],
+  registry: ['Workspace', 'Ads Registry'],
+  preflight: ['Workspace', 'Pre-Flight Checklist'],
+  entry: ['Workspace', 'Daily Data Entry'],
+  reports: ['Workspace', 'Reports'],
+  archive: ['Library', 'Report Archive'],
+  settings: ['Library', 'Settings'],
+};
+
+function hexToOklch(hex) {
+  // not needed — we just inject hex via CSS vars; oklch already in styles for default
+  return hex;
+}
+
+function App() {
+  const { Sidebar, Topbar } = window.Shell;
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  const [page, setPage] = React.useState('dashboard');
+  const [openClient, setOpenClient] = React.useState(null);
+  const [openAd, setOpenAd] = React.useState(null);
+  const [extraAds, setExtraAds] = React.useState([]);
+  const [cmdk, setCmdk] = React.useState(false);
+  const [toast, setToast] = React.useState(null);
+
+  // Apply theme + density at the html level
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = t.dark ? 'dark' : 'light';
+    document.documentElement.dataset.density = t.density;
+  }, [t.dark, t.density]);
+
+  // Apply accent colors via inline CSS vars
+  const accentStyle = React.useMemo(() => ({
+    '--brand-1': t.accent1,
+    '--brand-2': t.accent2,
+    '--brand-grad': `linear-gradient(135deg, ${t.accent1} 0%, ${t.accent2} 100%)`,
+    '--brand-solid': t.accent1,
+    '--brand-tint': t.accent1 + '22',
+    '--brand-tint-strong': t.accent1 + '38',
+  }), [t.accent1, t.accent2]);
+
+  // Cmd+K
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdk(c => !c);
+      }
+      if (e.key === 'Escape') {
+        setCmdk(false); setOpenAd(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2400);
+  };
+
+  const handleNav = (id) => {
+    if (id === 'clients') { setPage('clients'); setOpenClient(null); }
+    else { setPage(id); setOpenClient(null); }
+  };
+
+  const onSubmitPreflight = (form) => {
+    const newAd = {
+      id: 'new-' + Date.now(),
+      name: form.name,
+      client: form.client,
+      platform: form.platform,
+      objective: form.objective,
+      funnel: form.funnel,
+      status: 'live',
+      period: `${form.start} → ${form.end}`,
+      spend: 0, results: 0, cpl: 0,
+      owner: 'Mara Reyes',
+      test: form.test,
+    };
+    setExtraAds(arr => [newAd, ...arr]);
+    setPage('registry');
+    showToast(`✓ ${form.name} launched and added to registry`);
+  };
+
+  let crumbs = CRUMBS[page] || ['Workspace'];
+  if (page === 'clients' && openClient) {
+    const c = window.DATA.CLIENTS.find(c => c.id === openClient);
+    crumbs = ['Workspace', 'Clients', c.name];
+  }
+
+  return (
+    <div className="app" style={accentStyle}>
+      <Sidebar active={openClient ? 'clients' : page} onNav={handleNav} />
+      <main className="main">
+        <Topbar
+          crumbs={crumbs}
+          onCmdK={() => setCmdk(true)}
+          onToggleTheme={() => setTweak('dark', !t.dark)}
+          theme={t.dark ? 'dark' : 'light'}
+        />
+        <div className="content" key={page + (openClient || '')}>
+          {page === 'dashboard' && <window.Dashboard />}
+          {page === 'clients' && !openClient && <window.Clients onOpen={(id) => setOpenClient(id)} />}
+          {page === 'clients' && openClient && <window.ClientDetail id={openClient} onBack={() => setOpenClient(null)} />}
+          {page === 'registry' && <window.Registry extraAds={extraAds} onOpenAd={setOpenAd} />}
+          {page === 'preflight' && <window.Preflight onSubmit={onSubmitPreflight} />}
+          {page === 'entry' && <window.Entry />}
+          {page === 'reports' && <window.ReportBuilder />}
+          {page === 'archive' && (
+            <div className="content-inner">
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Report Archive</h1>
+                  <p className="page-sub">Every report ever sent · searchable</p>
+                </div>
+                <input className="search-input" placeholder="Search reports…"/>
+              </div>
+              <window.ReportArchive />
+            </div>
+          )}
+          {page === 'settings' && (
+            <div className="content-inner">
+              <div className="page-header"><div><h1 className="page-title">Settings</h1><p className="page-sub">Workspace, team, and integrations</p></div></div>
+              <div className="card" style={{ padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>Settings content lives here.</div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {openAd && <window.AdSidePanel ad={openAd} onClose={() => setOpenAd(null)} />}
+      <window.CmdK
+        open={cmdk}
+        onClose={() => setCmdk(false)}
+        onNav={(id) => { handleNav(id); setCmdk(false); }}
+        onOpenAd={(a) => { setPage('registry'); setOpenAd(a); setCmdk(false); }}
+      />
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <TweaksPanel>
+        <TweakSection label="Theme" />
+        <TweakToggle label="Dark mode" value={t.dark} onChange={(v) => setTweak('dark', v)} />
+        <TweakRadio label="Density" value={t.density} options={['dense','comfortable']} onChange={(v) => setTweak('density', v)} />
+        <TweakSection label="Accent gradient" />
+        <TweakColor label="Color 1" value={t.accent1} onChange={(v) => setTweak('accent1', v)} />
+        <TweakColor label="Color 2" value={t.accent2} onChange={(v) => setTweak('accent2', v)} />
+        <TweakSection label="Tip" />
+        <div style={{ fontSize: 11, color: 'rgba(120,120,140,.85)', lineHeight: 1.5 }}>
+          Press <b>⌘K</b> for the command palette. Submit the pre-flight form to add an ad to the registry.
+        </div>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
