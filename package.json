@@ -1,0 +1,13 @@
+{
+  "name": "cadence",
+  "version": "1.0.0",
+  "description": "Cadence — Performance Marketing OS",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "python3 -m http.server 8080 --directory dist"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}
